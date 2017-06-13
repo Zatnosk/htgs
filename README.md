@@ -62,3 +62,8 @@ for( row = example1 ){
 	/* this is supposed to be a function invocation */
 }
 ```
+
+## Notes
+### Use an AST based approach for SQL / database connections
+(https://manowar.social/@zatnosk/188341)
+This language is basically a way to build tree structures, such as HTML. Treating SQL as another tree structure would fit in perfectly, although it might limit SQL use to features that this language is aware of; extra important that the language is easily extensible down to its core.
