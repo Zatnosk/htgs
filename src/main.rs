@@ -4,15 +4,20 @@ use std::io::Read;
 use std::path::Path;
 
 #[macro_use] extern crate nom;
-use nom::{alphanumeric};
+use nom::{alphanumeric,IResult};
 
 fn main(){
 	let mut file = open_file();
 	let mut buf: &mut Vec<u8> = &mut Vec::new();
 	let _ = file.read_to_end(buf);
-	let res = parser(buf.as_slice());
 
-	println!("{:?}\n", res);
+	let res = match parser(buf.as_slice()){
+		IResult::Done(_, ast) => parse_exprs(ast),
+		IResult::Error(_) => Vec::new(),
+		IResult::Incomplete(_) => Vec::new()
+	};
+
+	println!("\n{:?}\n", res);
 }
 
 fn open_file() -> std::fs::File{
@@ -25,6 +30,86 @@ fn open_file() -> std::fs::File{
     };
 
     return file;
+}
+
+fn parse_exprs(ast: Vec<Expr>) -> Vec<HContent>{
+	let mut content = Vec::new();
+	for e in ast {
+		let elem = match e {
+			Expr::ElemFull(id, attrs, content) => HContent::Node(HElement{
+				tagname: parse_context(id),
+				attributes: parse_attrs(attrs),
+				content: parse_exprs(content)
+			}),
+			Expr::ElemSlim(id, content) => HContent::Node(HElement{
+				tagname: parse_context(id),
+				attributes: Vec::new(),
+				content: parse_exprs(content)
+			}),
+			Expr::ElemEmpty(id, attrs) => HContent::Node(HElement{
+				tagname: parse_context(id),
+				attributes: parse_attrs(attrs),
+				content: Vec::new()
+			}),
+			Expr::ElemSlimEmpty(id) => HContent::Node(HElement{
+				tagname: parse_context(id),
+				attributes: Vec::new(),
+				content: Vec::new()
+			}),
+			Expr::Str(s) => HContent::Text(String::from_utf8_lossy(s).into_owned()),
+		};
+		content.push(elem);
+	}
+	return content;
+}
+
+fn parse_attrs(attrs: AttrList) -> Vec<HAttribute>{
+	let mut vec = Vec::new();
+	match attrs.s {
+		Some(s) => vec.push(HAttribute{key:String::from("$"),value:Some(String::from_utf8_lossy(s).into_owned())}),
+		None => ()
+	}
+	for attr in attrs.attrs {
+		match attr {
+			Attr::Key(_) => (), // continue work here!
+			Attr::KeyValue(_,_) => (),
+			Attr::KeyValueAdd(_,_) => ()
+		}
+	}
+	println!("{:?}", vec);
+	return vec;
+}
+
+fn parse_context(id: Context) -> String {
+	let string = match id {
+		Context::Identifier(s) => String::from_utf8_lossy(s).into_owned(),
+		Context::Reference(_,_) => String::new()
+	};
+	return string;
+}
+
+#[derive(Debug)]
+struct HDocument {
+	content: Vec<HContent>
+}
+
+#[derive(Debug)]
+enum HContent {
+	Text(String),
+	Node(HElement)
+}
+
+#[derive(Debug)]
+struct HElement {
+	tagname: String,
+	attributes: Vec<HAttribute>,
+	content: Vec<HContent>
+}
+
+#[derive(Debug)]
+struct HAttribute {
+	key: String,
+	value: Option<String>
 }
 
 #[derive(Debug)]
