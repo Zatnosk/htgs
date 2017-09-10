@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::collections::HashMap;
 
 #[macro_use] extern crate nom;
 use nom::{alphanumeric,IResult};
@@ -43,7 +44,7 @@ fn parse_exprs(ast: Vec<Expr>) -> Vec<HContent>{
 			}),
 			Expr::ElemSlim(id, content) => HContent::Node(HElement{
 				tagname: parse_context(id),
-				attributes: Vec::new(),
+				attributes: HashMap::new(),
 				content: parse_exprs(content)
 			}),
 			Expr::ElemEmpty(id, attrs) => HContent::Node(HElement{
@@ -53,7 +54,7 @@ fn parse_exprs(ast: Vec<Expr>) -> Vec<HContent>{
 			}),
 			Expr::ElemSlimEmpty(id) => HContent::Node(HElement{
 				tagname: parse_context(id),
-				attributes: Vec::new(),
+				attributes: HashMap::new(),
 				content: Vec::new()
 			}),
 			Expr::Str(s) => HContent::Text(String::from_utf8_lossy(s).into_owned()),
@@ -63,25 +64,46 @@ fn parse_exprs(ast: Vec<Expr>) -> Vec<HContent>{
 	return content;
 }
 
-fn parse_attrs(attrs: AttrList) -> Vec<HAttribute>{
-	let mut vec = Vec::new();
+fn parse_attrs(attrs: AttrList) -> HashMap<String, Vec<String>>{
+	let mut map = HashMap::new();
 	match attrs.s {
-		Some(s) => vec.push(HAttribute{key:String::from("$"),value:Some(String::from_utf8_lossy(s).into_owned())}),
+		Some(value) => {
+			map.insert(
+				String::from("$"),
+				vec!(String::from_utf8_lossy(value).into_owned())
+			);
+		},
 		None => ()
 	}
 	for attr in attrs.attrs {
 		match attr {
-			Attr::Key(_) => (), // continue work here!
-			Attr::KeyValue(_,_) => (),
-			Attr::KeyValueAdd(_,_) => ()
+			Attr::Key(key) =>{
+				map.insert(
+					String::from_utf8_lossy(key).into_owned(),
+					Vec::new()
+				);
+			},
+			Attr::KeyValue(key,value) => {
+				map.insert(
+					String::from_utf8_lossy(key).into_owned(),
+					vec!(String::from_utf8_lossy(value).into_owned())
+				);
+			},
+			Attr::KeyValueAdd(k,value) => {
+				let key = String::from_utf8_lossy(k).into_owned();
+				map.entry(key)
+					.or_insert_with(Vec::new)
+					.push(String::from_utf8_lossy(value).into_owned());
+			}
 		}
 	}
-	println!("{:?}", vec);
-	return vec;
+	return map;
 }
 
 fn parse_context(id: Context) -> String {
 	let string = match id {
+		// continue work here
+		Context::Assignment(_,_) => String::new(),
 		Context::Identifier(s) => String::from_utf8_lossy(s).into_owned(),
 		Context::Reference(_,_) => String::new()
 	};
@@ -102,14 +124,8 @@ enum HContent {
 #[derive(Debug)]
 struct HElement {
 	tagname: String,
-	attributes: Vec<HAttribute>,
+	attributes: HashMap<String, Vec<String>>,
 	content: Vec<HContent>
-}
-
-#[derive(Debug)]
-struct HAttribute {
-	key: String,
-	value: Option<String>
 }
 
 #[derive(Debug)]
@@ -136,6 +152,7 @@ struct AttrList<'a> {
 
 #[derive(Debug)]
 enum Context<'a> {
+	Assignment(&'a [u8], Box<Context<'a>>),
 	Reference(&'a [u8], Box<Option<Context<'a>>>),
 	Identifier(&'a [u8])
 }
@@ -194,6 +211,12 @@ named!(attribute<&[u8], Attr>,
 );
 
 named!(context<&[u8], Context>, alt!(
+	do_parse!(
+		lh: identifier >>
+		ws!(tag!("=")) >>
+		rh: context >>
+		(Context::Assignment(lh,Box::new(rh)))
+	) |
 	do_parse!(
 		id: identifier >>
 		ws!(tag!("->")) >>
