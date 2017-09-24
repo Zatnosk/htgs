@@ -13,7 +13,7 @@ fn main(){
 	let _ = file.read_to_end(buf);
 
 	let res = match parser(buf.as_slice()){
-		IResult::Done(_, ast) => parse_exprs(ast),
+		IResult::Done(_, ast) => parse_exprs(ast, &mut HashMap::new()),
 		IResult::Error(_) => Vec::new(),
 		IResult::Incomplete(_) => Vec::new()
 	};
@@ -33,33 +33,56 @@ fn open_file() -> std::fs::File{
     return file;
 }
 
-fn parse_exprs(ast: Vec<Expr>) -> Vec<HContent>{
+fn parse_exprs(ast: Vec<Expr>, names: &mut HashMap<String, HElement>) -> Vec<HContent>{
 	let mut content = Vec::new();
 	for e in ast {
+		let parent: Option<String>;
 		let elem = match e {
-			Expr::ElemFull(id, attrs, content) => HContent::Node(HElement{
-				tagname: parse_context(id),
-				attributes: parse_attrs(attrs),
-				content: parse_exprs(content)
-			}),
-			Expr::ElemSlim(id, content) => HContent::Node(HElement{
-				tagname: parse_context(id),
-				attributes: HashMap::new(),
-				content: parse_exprs(content)
-			}),
-			Expr::ElemEmpty(id, attrs) => HContent::Node(HElement{
-				tagname: parse_context(id),
-				attributes: parse_attrs(attrs),
-				content: Vec::new()
-			}),
-			Expr::ElemSlimEmpty(id) => HContent::Node(HElement{
-				tagname: parse_context(id),
-				attributes: HashMap::new(),
-				content: Vec::new()
-			}),
-			Expr::Str(s) => HContent::Text(String::from_utf8_lossy(s).into_owned()),
+			Expr::ElemFull(id, attrs, content) => {
+				let (tagname, p) = parse_context(id);
+				parent = p;
+				HContent::Node(HElement{
+					tagname: tagname,
+					attributes: parse_attrs(attrs),
+					content: parse_exprs(content, names)
+				})
+			},
+			Expr::ElemSlim(id, content) => {
+				let (tagname, p) = parse_context(id);
+				parent = p;
+				HContent::Node(HElement{
+					tagname: tagname,
+					attributes: HashMap::new(),
+					content: parse_exprs(content, names)
+				})
+			},
+			Expr::ElemEmpty(id, attrs) => {
+				let (tagname, p) = parse_context(id);
+				parent = p;
+				HContent::Node(HElement{
+					tagname: tagname,
+					attributes: parse_attrs(attrs),
+					content: Vec::new()
+				})
+			},
+			Expr::ElemSlimEmpty(id) => {
+				let (tagname, p) = parse_context(id);
+				parent = p;
+				HContent::Node(HElement{
+					tagname: tagname,
+					attributes: HashMap::new(),
+					content: Vec::new()
+				})
+			},
+			Expr::Str(s) => {
+				parent = None;
+				HContent::Text(String::from_utf8_lossy(s).into_owned())
+			}
 		};
-		content.push(elem);
+		match parent {
+			None => content.push(elem),
+			Some(_) => () // find some way to insert elements in other branches of the tree
+		};
 	}
 	return content;
 }
@@ -100,14 +123,14 @@ fn parse_attrs(attrs: AttrList) -> HashMap<String, Vec<String>>{
 	return map;
 }
 
-fn parse_context(id: Context) -> String {
+fn parse_context<'a>(id: Context) -> (String, Option<String>) {
 	let string = match id {
 		// continue work here
 		Context::Assignment(_,_) => String::new(),
 		Context::Identifier(s) => String::from_utf8_lossy(s).into_owned(),
 		Context::Reference(_,_) => String::new()
 	};
-	return string;
+	return (string,None);
 }
 
 #[derive(Debug)]
